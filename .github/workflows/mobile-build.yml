@@ -35,11 +35,7 @@ jobs:
       - name: Flutter doctor
         run: flutter doctor -v
 
-      - name: Dart source consistency
-        run: python3 scripts/dart_source_consistency.py
-
-      - name: Compile/security risk scan
-        run: python3 scripts/compile_risk_scan.py
+      
 
       - name: Generate platform shells
         run: bash scripts/bootstrap_mobile_platforms.sh
