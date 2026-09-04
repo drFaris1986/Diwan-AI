@@ -1,0 +1,190 @@
+name: Diwan AI Mobile Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.47.2'
+  DIWAN_ANDROID_APP_ID: ${{ vars.DIWAN_ANDROID_APP_ID }}
+  DIWAN_IOS_BUNDLE_ID: ${{ vars.DIWAN_IOS_BUNDLE_ID }}
+  DIWAN_APP_LINK_DOMAIN: ${{ vars.DIWAN_APP_LINK_DOMAIN }}
+
+jobs:
+  quality:
+    name: Flutter analyze + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Dart source consistency
+        run: python3 scripts/dart_source_consistency.py
+
+      - name: Compile/security risk scan
+        run: python3 scripts/compile_risk_scan.py
+
+      - name: Generate platform shells
+        run: bash scripts/bootstrap_mobile_platforms.sh
+
+      - name: Verify generated platform configuration
+        run: python3 scripts/verify_mobile_platform_config.py
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Format check
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Tests
+        run: flutter test --reporter expanded
+
+      - name: Collect quality diagnostics
+        if: failure()
+        run: |
+          mkdir -p ci-diagnostics
+          flutter doctor -v > ci-diagnostics/flutter-doctor.txt 2>&1 || true
+          flutter pub get > ci-diagnostics/pub-get.txt 2>&1 || true
+          flutter analyze > ci-diagnostics/analyze.txt 2>&1 || true
+          flutter test --reporter expanded > ci-diagnostics/tests.txt 2>&1 || true
+
+      - name: Upload quality diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-failure-logs
+          path: ci-diagnostics/
+          if-no-files-found: ignore
+
+  android:
+    name: Android debug APK
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Generate platform shells
+        run: bash scripts/bootstrap_mobile_platforms.sh
+
+      - name: Verify generated platform configuration
+        run: python3 scripts/verify_mobile_platform_config.py
+
+      - name: Build Android
+        run: bash scripts/build_android_ci.sh
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: diwan-ai-android-debug
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+
+      - name: Collect Android diagnostics
+        if: failure()
+        run: |
+          mkdir -p ci-diagnostics
+          flutter doctor -v > ci-diagnostics/flutter-doctor.txt 2>&1 || true
+          flutter build apk --debug -v > ci-diagnostics/android-build.txt 2>&1 || true
+
+      - name: Upload Android diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-failure-logs
+          path: ci-diagnostics/
+          if-no-files-found: ignore
+
+  ios:
+    name: iOS simulator app
+    needs: quality
+    runs-on: macos-15
+    timeout-minutes: 55
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Generate platform shells
+        run: bash scripts/bootstrap_mobile_platforms.sh
+
+      - name: Verify generated platform configuration
+        run: python3 scripts/verify_mobile_platform_config.py
+
+      - name: Build iOS Simulator
+        run: bash scripts/build_ios_ci.sh
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+
+      - name: Archive app
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/ios/iphonesimulator/Runner.app \
+            diwan-ai-ios-simulator.zip
+
+      - name: Upload iOS app
+        uses: actions/upload-artifact@v4
+        with:
+          name: diwan-ai-ios-simulator
+          path: diwan-ai-ios-simulator.zip
+          if-no-files-found: error
+
+      - name: Collect iOS diagnostics
+        if: failure()
+        run: |
+          mkdir -p ci-diagnostics
+          flutter doctor -v > ci-diagnostics/flutter-doctor.txt 2>&1 || true
+          flutter build ios --simulator -v > ci-diagnostics/ios-build.txt 2>&1 || true
+          if [ -d ios ]; then
+            find ios -maxdepth 3 -type f \( -name "*.xcconfig" -o -name "Podfile*" \) \
+              -print > ci-diagnostics/ios-files.txt || true
+          fi
+
+      - name: Upload iOS diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-failure-logs
+          path: ci-diagnostics/
+          if-no-files-found: ignore
