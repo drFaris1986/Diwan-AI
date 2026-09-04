@@ -1,2 +1,3 @@
 # Diwan-AI
-A collection of Arabic poetry from the pre-Islamic  era to the modern era, including the Umayyad, Andalusian, and contemporary periods. To be one area enouh to research the pelot without any effeort , and I think this new idea and will improvement with a time and we can add more with a time , thank you so much to your supporting to acheave our goal
+
+Diwan AI is an intelligent platform dedicated to Arabic poetry, from the Pre-Islamic era to modern times. Explore poets and poems, search for verses, verify their attribution and sources, and discover poetic meters, rhymes, and textual variations. Enjoy a refined reading experience, personalized favorites, Verse of the Day, and an AI assistant that helps explain, interpret, and analyze Arabic poetry with ease.
